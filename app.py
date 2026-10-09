@@ -27,7 +27,6 @@ if league == 'DEL':
         'DEL-Spielerstatistiken und Torschützenprognosen '
         'werden nach Anbindung einer geeigneten Datenquelle ergänzt.'
     )
-```
 else:
     if st.button('NHL-Spiele laden'):
         try:
