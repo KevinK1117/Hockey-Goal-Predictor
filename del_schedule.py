@@ -4,7 +4,6 @@ Experimental HTML adapter: if the official page changes or does not expose a
 parseable HTML table, show the official link rather than inventing games.
 """
 from __future__ import annotations
-
 import datetime as dt
 import io
 import re
