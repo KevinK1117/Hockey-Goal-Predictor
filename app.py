@@ -4,7 +4,7 @@ from nhl import games_for_date, skaters_from_boxscore, player_recent
 from model import baseline_probability
 from player_predictions import render_player_predictions
 from nhl_today_tomorrow import render_nhl_today_tomorrow
-
+from del import render_del_schedule
 st.set_page_config(page_title='Hockey Goal Predictor', page_icon='🏒', layout='wide')
 st.title('🏒 Hockey Goal Predictor – NHL & DEL')
 st.warning('Prototyp: Prozentwerte sind unkalibrierte Basisschätzungen, keine belastbaren Vorhersagen. DEL noch nicht angebunden.')
