@@ -48,3 +48,8 @@ else:
             st.error(f'NHL-Abruf fehlgeschlagen: {exc}') 
 st.divider()
 render_player_predictions()
+
+from nhl_today_tomorrow import render_nhl_today_tomorrow
+
+st.divider()
+render_nhl_today_tomorrow()
