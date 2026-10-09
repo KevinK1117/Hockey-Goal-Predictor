@@ -1,9 +1,10 @@
-"""Read-only mobile DEL regular-season schedule, from the public official page.
+"""Read-only mobile DEL regular-season schedule from the official public page.
 
-Experimental HTML adapter: if the official page changes or does not expose a
-parseable HTML table, show the official link rather than inventing games.
+If the official site does not provide a parseable HTML table, show its link
+rather than inventing fixtures or scores.
 """
 from __future__ import annotations
+
 import datetime as dt
 import io
 import re
@@ -58,11 +59,25 @@ def _field(row: pd.Series, names: tuple[str, ...]) -> str:
     return ''
 
 
+def _score(value: object) -> str:
+    """Accept plausible standalone hockey scores, not clock times such as 19:30."""
+    candidate = str(value).strip()
+    match = re.fullmatch(r'(\d{1,2})\s*:\s*(\d{1,2})', candidate)
+    if not match:
+        return ''
+    home_goals, away_goals = map(int, match.groups())
+    if home_goals > 15 or away_goals > 15:
+        return ''
+    return f'{home_goals}:{away_goals}'
+
+
 @st.cache_data(ttl=1800, show_spinner=False)
 def load_del_schedule() -> pd.DataFrame:
-    """Parse only verifiable game rows. No writes, keys, or hidden API calls."""
-    response = requests.get(DEL_URL, timeout=25,
-                            headers={'User-Agent': 'Mozilla/5.0 (compatible; HockeyGoalPredictor/1.0)'})
+    """Parse only verifiable game rows; do not write to any external service."""
+    response = requests.get(
+        DEL_URL, timeout=25,
+        headers={'User-Agent': 'Mozilla/5.0 (compatible; HockeyGoalPredictor/1.0)'},
+    )
     response.raise_for_status()
     tables = pd.read_html(io.StringIO(response.text), displayed_only=False)
     games = []
@@ -79,25 +94,26 @@ def load_del_schedule() -> pd.DataFrame:
             time_str = _field(row, ('uhrzeit', 'zeit', 'time'))
             match = re.search(r'\b([01]?\d|2[0-3]):([0-5]\d)\b', time_str)
             kickoff = f'{int(match.group(1)):02d}:{match.group(2)}' if match else 'Zeit offen'
-            result = _field(row, ('ergebnis', 'resultat', 'result', 'stand'))
-                        if not result:
-                # Ergebnis nur aus plausiblen Spielständen lesen
+
+            result = _score(_field(row, ('ergebnis', 'resultat', 'result', 'stand')))
+            if not result:
+                # Look for a plausible standalone score in an unlabeled column.
                 for value in row.values:
-                    candidate = str(value).strip()
-                    if re.fullmatch(r'\d{1,2}\s*:\s*\d{1,2}', candidate):
-                        left, right = map(int, candidate.split(':'))
-                        if left <= 15 and right <= 15:
-                            result = candidate
-                            break
-                        
-                    
-            games.append({'Datum': day, 'Uhrzeit': kickoff,
-                          'Heim': home, 'Gast': away,
-                          'Ergebnis': result if re.search(r'\d+\s*:\s*\d+', result) else '–'})
+                    result = _score(value)
+                    if result:
+                        break
+
+            games.append({
+                'Datum': day, 'Uhrzeit': kickoff,
+                'Heim': home, 'Gast': away,
+                'Ergebnis': result or '–',
+            })
     if not games:
         return pd.DataFrame(columns=['Datum', 'Uhrzeit', 'Heim', 'Gast', 'Ergebnis'])
-    return (pd.DataFrame(games).drop_duplicates(subset=['Datum', 'Heim', 'Gast'])
-            .sort_values(['Datum', 'Uhrzeit', 'Heim']).reset_index(drop=True))
+    return (pd.DataFrame(games)
+            .drop_duplicates(subset=['Datum', 'Heim', 'Gast'])
+            .sort_values(['Datum', 'Uhrzeit', 'Heim'])
+            .reset_index(drop=True))
 
 
 def render_del_schedule() -> None:
