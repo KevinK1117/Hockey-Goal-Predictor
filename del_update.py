@@ -1,14 +1,16 @@
-"""DEL 2026/27: Spieler-Einzelspielstatistiken sicher als CSV vorbereiten.
+"""DEL 2026/27: geprüfte Einzelspielstatistiken als CSV vorbereiten.
 
-Nur offizielle PENNY-DEL-Webseiten. Kein Supabase-Schreibzugriff.
-Die gefundene Linkliste ist nicht garantiert vollständig.
+Liest ausschließlich öffentliche PENNY-DEL-Seiten. Keine Supabase-Schreibzugriffe.
+Namen/Teams werden nur übernommen, wenn sie anhand der HTML-Daten
+plausibel identifiziert werden können; unklare Angaben bleiben leer.
 """
 from __future__ import annotations
 
 import io
+import json
 import re
 import time
-from datetime import datetime
+from html import unescape
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
@@ -30,13 +32,12 @@ SEASON = "2026/27"
 class PlayerLinks(HTMLParser):
     def __init__(self):
         super().__init__()
-        self.links: set[str] = set()
+        self.links = set()
 
     def handle_starttag(self, tag, attrs):
         if tag != "a":
             return
-        href = dict(attrs).get("href") or ""
-        absolute = urljoin(BASE, href)
+        absolute = urljoin(BASE, dict(attrs).get("href") or "")
         parsed = urlparse(absolute)
         if (parsed.netloc == "www.penny-del.org"
                 and parsed.path.startswith(PROFILE_PATH)
@@ -44,13 +45,51 @@ class PlayerLinks(HTMLParser):
             self.links.add(absolute)
 
 
-def fetch(session: requests.Session, url: str) -> str:
+class PageMetadata(HTMLParser):
+    """Collect structured JSON-LD and visible headings, without guessing team."""
+    def __init__(self):
+        super().__init__()
+        self.title = []
+        self.headings = []
+        self.jsonld = []
+        self._capture = None
+        self._parts = []
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if tag == "script" and attrs.get("type", "").lower() == "application/ld+json":
+            self._capture, self._parts = "jsonld", []
+        elif tag in {"h1", "title"}:
+            self._capture, self._parts = tag, []
+
+    def handle_data(self, data):
+        if self._capture:
+            self._parts.append(data)
+
+    def handle_endtag(self, tag):
+        if tag != self._capture:
+            return
+        value = unescape("".join(self._parts)).strip()
+        if value:
+            if tag == "jsonld":
+                try:
+                    self.jsonld.append(json.loads(value))
+                except ValueError:
+                    pass
+            elif tag == "h1":
+                self.headings.append(value)
+            elif tag == "title":
+                self.title.append(value)
+        self._capture, self._parts = None, []
+
+
+def fetch(session, url):
     response = session.get(url, timeout=(10, 15))
     response.raise_for_status()
     return response.text
 
 
-def find_table(html: str) -> pd.DataFrame | None:
+def find_table(html):
     try:
         tables = pd.read_html(io.StringIO(html), displayed_only=False)
     except (ValueError, ImportError):
@@ -62,25 +101,61 @@ def find_table(html: str) -> pd.DataFrame | None:
     return None
 
 
-def parse_name(url: str) -> str:
+def slug_name(url):
     slug = urlparse(url).path.rstrip("/").split("/")[-2]
-    slug = re.sub(r"-\d+$", "", slug)
-    return slug.replace("_", " ").replace("-", " ").strip().title()
+    return re.sub(r"-\d+$", "", slug).replace("_", " ").replace("-", " ").strip().title()
 
 
-def number(value) -> int | None:
-    s = str(value).strip()
-    if not re.fullmatch(r"\d+", s):
-        return None
-    return int(s)
+def _person_nodes(data):
+    if isinstance(data, list):
+        for item in data:
+            yield from _person_nodes(item)
+    elif isinstance(data, dict):
+        types = data.get("@type", [])
+        types = [types] if isinstance(types, str) else types
+        if "Person" in types or "Athlete" in types:
+            yield data
+        for value in data.values():
+            if isinstance(value, (dict, list)):
+                yield from _person_nodes(value)
+
+
+def metadata(html, url):
+    parser = PageMetadata()
+    parser.feed(html)
+    expected = slug_name(url)
+    names = set()
+    teams = set()
+    for obj in parser.jsonld:
+        for person in _person_nodes(obj):
+            name = person.get("name")
+            if isinstance(name, str) and name.strip():
+                names.add(name.strip())
+            affiliation = person.get("memberOf") or person.get("affiliation")
+            if isinstance(affiliation, dict):
+                team = affiliation.get("name")
+                if isinstance(team, str) and team.strip():
+                    teams.add(team.strip())
+    # Heading only if its normalized text matches the profile's URL name.
+    def normalized(value):
+        return re.sub(r"[^a-z0-9]", "", value.lower())
+    for heading in parser.headings:
+        if normalized(heading) == normalized(expected):
+            names.add(heading)
+    return (next(iter(names)) if len(names) == 1 else "",
+            next(iter(teams)) if len(teams) == 1 else "")
+
+
+def number(value):
+    value = str(value).strip()
+    return int(value) if re.fullmatch(r"\d+", value) else None
 
 
 def main():
     retry = Retry(total=2, connect=2, read=2, status=2, backoff_factor=1,
                   status_forcelist=[429, 500, 502, 503, 504],
                   allowed_methods=["GET"], respect_retry_after_header=True)
-    records: list[dict] = []
-    report: list[dict] = []
+    records, report = [], []
     with requests.Session() as session:
         session.headers.update(HEADERS)
         session.mount("https://", HTTPAdapter(max_retries=retry))
@@ -94,27 +169,28 @@ def main():
 
         for index, url in enumerate(links, 1):
             time.sleep(0.5)
-            status = "ok"
-            count = 0
+            status, count, name, team = "ok", 0, "", ""
             try:
                 html = fetch(session, url)
+                name, team = metadata(html, url)
                 table = find_table(html)
                 if table is None:
                     status = "keine_tabelle"
                 else:
                     for _, row in table.iterrows():
-                        raw_date = str(row["Datum"]).strip()
-                        parsed_date = pd.to_datetime(raw_date, format="%d.%m.%Y", errors="coerce")
+                        day = pd.to_datetime(str(row["Datum"]).strip(),
+                                             format="%d.%m.%Y", errors="coerce")
                         goals, shots = number(row["T"]), number(row["Schüsse"])
                         opponent = str(row["Gegner"]).strip()
-                        if (pd.isna(parsed_date) or not (datetime(2026, 9, 1) <= parsed_date.to_pydatetime() <= datetime(2027, 6, 30))
+                        if (pd.isna(day) or not (pd.Timestamp("2026-09-01") <= day <= pd.Timestamp("2027-06-30"))
                                 or goals is None or shots is None or goals > shots
                                 or not opponent or opponent.lower() == "nan"):
                             continue
                         records.append({
                             "season": SEASON,
-                            "game_date": parsed_date.strftime("%Y-%m-%d"),
-                            "player_name": parse_name(url),
+                            "game_date": day.strftime("%Y-%m-%d"),
+                            "player_name": name,
+                            "team": team,
                             "opponent": opponent,
                             "goals": goals,
                             "shots": shots,
@@ -125,7 +201,9 @@ def main():
                         status = "keine_gueltigen_spiele"
             except requests.RequestException as exc:
                 status = type(exc).__name__
-            report.append({"source_url": url, "status": status, "valid_games": count})
+            report.append({"source_url": url, "status": status,
+                           "valid_games": count, "verified_name": name,
+                           "verified_team": team})
             if index % 25 == 0 or index == len(links):
                 print(f"Geprüft: {index}/{len(links)} | Zeilen: {len(records)}", flush=True)
 
@@ -133,12 +211,14 @@ def main():
     if not records:
         raise RuntimeError("Keine gültigen Spiele. Nur Prüfbericht erstellt.")
     df = pd.DataFrame(records).drop_duplicates(subset=["source_url", "game_date", "opponent"])
-    df.sort_values(["game_date", "player_name"], inplace=True)
+    df.sort_values(["game_date", "source_url"], inplace=True)
     df.to_csv(OUTPUT, index=False)
     print(f"CSV erstellt: {OUTPUT} ({len(df)} Spieler-Spiel-Zeilen)", flush=True)
     print(f"Prüfbericht: {REPORT}", flush=True)
-    print("ACHTUNG: Spielernamen sind aus URL-Slugs abgeleitet; Teamzuordnung fehlt.", flush=True)
-    print("Spielerliste möglicherweise unvollständig. Kein Supabase-Schreibzugriff.", flush=True)
+    print(f"Profile mit eindeutigem Namen: {sum(bool(r['verified_name']) for r in report)}", flush=True)
+    print(f"Profile mit eindeutigem Team: {sum(bool(r['verified_team']) for r in report)}", flush=True)
+    print("Unklare Namen und Teams bleiben leer. Kein Supabase-Schreibzugriff.", flush=True)
+    print("Vollständigkeit der Spielerprofile nicht bestätigt.", flush=True)
 
 
 if __name__ == "__main__":
