@@ -85,9 +85,13 @@ def load_del_schedule() -> pd.DataFrame:
                 # Some official tables have an unlabeled score column.
                 for value in row.values:
                     candidate = str(value).strip()
-                    if re.match(r'^\d+\s*:\s*\d+(?:\s|$|\()', candidate):
-                        result = candidate
-                        break
+                    if re.fullmatch(r'\d{1,2}\s*:\s*\d{1,2}', candidate):
+    left, right = map(int, candidate.split(':'))
+    if left <= 15 and right <= 15:
+        result = candidate
+        break
+                        
+                    
             games.append({'Datum': day, 'Uhrzeit': kickoff,
                           'Heim': home, 'Gast': away,
                           'Ergebnis': result if re.search(r'\d+\s*:\s*\d+', result) else '–'})
