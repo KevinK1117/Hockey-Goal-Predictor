@@ -80,15 +80,15 @@ def load_del_schedule() -> pd.DataFrame:
             match = re.search(r'\b([01]?\d|2[0-3]):([0-5]\d)\b', time_str)
             kickoff = f'{int(match.group(1)):02d}:{match.group(2)}' if match else 'Zeit offen'
             result = _field(row, ('ergebnis', 'resultat', 'result', 'stand'))
-            if not result:
-                # Some official tables have an unlabeled score column.
+                        if not result:
+                # Ergebnis nur aus plausiblen Spielständen lesen
                 for value in row.values:
                     candidate = str(value).strip()
                     if re.fullmatch(r'\d{1,2}\s*:\s*\d{1,2}', candidate):
-    left, right = map(int, candidate.split(':'))
-    if left <= 15 and right <= 15:
-        result = candidate
-        break
+                        left, right = map(int, candidate.split(':'))
+                        if left <= 15 and right <= 15:
+                            result = candidate
+                            break
                         
                     
             games.append({'Datum': day, 'Uhrzeit': kickoff,
