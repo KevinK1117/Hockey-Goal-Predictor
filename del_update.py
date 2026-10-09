@@ -101,6 +101,15 @@ def main():
                 print(f'Keine passende Einzelspieltabelle: {url}', flush=True)
                 continue
             print(f'Profil: {url}', flush=True)
+            print('--- PROFIL-INFORMATIONEN ---', flush=True)
+
+for raw in pd.read_html(io.StringIO(html), displayed_only=False):
+    print(
+        raw.head(3).to_string(index=False, header=True)[:1200],
+        flush=True
+    )
+
+print('--- ENDE ---', flush=True)
             print(f'Einzelspielzeilen: {len(table)}', flush=True)
             print(table[['Datum', 'Gegner', 'T', 'Schüsse']].head(3).to_string(index=False), flush=True)
             valid += 1
