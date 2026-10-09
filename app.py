@@ -28,12 +28,6 @@ if league == 'DEL':
         'werden nach Anbindung einer geeigneten Datenquelle ergänzt.'
     )
 ```
-
-Damit ist der offizielle Spielplan aus deiner App erreichbar, ohne dass wir eine ungeprüfte Schnittstelle verwenden. **Das ist noch keine automatische Datenübernahme.**
-
-Für die vollständige Integration möchte ich als Nächstes eine verlässlich nutzbare DEL-Datenquelle für Spielpläne, Ergebnisse und Spielerstatistiken prüfen. Dann können wir die Daten automatisch aktualisieren und später Torschützenchancen berechnen.
-
-Du kannst den ersten Schritt jetzt einbauen und mir anschließend einen Screenshot des DEL-Bereichs schicken.
 else:
     if st.button('NHL-Spiele laden'):
         try:
