@@ -12,8 +12,28 @@ st.warning('Prototyp: Prozentwerte sind unkalibrierte Basisschätzungen, keine b
 league = st.selectbox('Liga', ['NHL', 'DEL'])
 date = st.date_input('Spieltag (Datum)', dt.date.today())
 
+
 if league == 'DEL':
-    st.info('DEL-Datenquelle wird nach Prüfung der Nutzungsrechte integriert. Keine erfundenen Daten.')
+    st.subheader('🇩🇪 PENNY DEL – Saison 2026/27')
+    st.caption('Reguläre Saison · Offizielle DEL-Daten')
+
+    st.link_button(
+        '🏒 Offiziellen DEL-Spielplan öffnen',
+        'https://www.penny-del.org/statistik/saison-2026-27/hauptrunde/spielplan',
+        use_container_width=True,
+    )
+
+    st.info(
+        'DEL-Spielerstatistiken und Torschützenprognosen '
+        'werden nach Anbindung einer geeigneten Datenquelle ergänzt.'
+    )
+```
+
+Damit ist der offizielle Spielplan aus deiner App erreichbar, ohne dass wir eine ungeprüfte Schnittstelle verwenden. **Das ist noch keine automatische Datenübernahme.**
+
+Für die vollständige Integration möchte ich als Nächstes eine verlässlich nutzbare DEL-Datenquelle für Spielpläne, Ergebnisse und Spielerstatistiken prüfen. Dann können wir die Daten automatisch aktualisieren und später Torschützenchancen berechnen.
+
+Du kannst den ersten Schritt jetzt einbauen und mir anschließend einen Screenshot des DEL-Bereichs schicken.
 else:
     if st.button('NHL-Spiele laden'):
         try:
