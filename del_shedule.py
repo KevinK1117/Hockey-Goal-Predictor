@@ -5,6 +5,8 @@ parseable HTML table, show the official link rather than inventing games.
 """
 from __future__ import annotations
 
+from del_schedule import render_del_schedule
+
 import datetime as dt
 import io
 import re
