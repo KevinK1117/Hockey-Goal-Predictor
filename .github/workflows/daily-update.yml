@@ -36,6 +36,6 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          NHL_DAYS_BACK: "7"
+          NHL_DAYS_BACK: "90"
         run: python update_players.py
 
